@@ -1,0 +1,2 @@
+python receiver.py
+streamlit run dashboard.py

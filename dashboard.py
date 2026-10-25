@@ -27,9 +27,7 @@ else:
     pilihan = st.selectbox("Pilih Interval Waktu:", list(interval_dict.keys()))
     freq = interval_dict[pilihan]
 
-    # Agregasi (Rata-rata) berdasarkan interval waktu yang dipilih
     df_resampled = df.set_index('Datetime').resample(freq)[['jarak', 'Intensitas_cahaya']].mean().reset_index()
-    # Hapus row yang NaN (jika pada interval tersebut tidak ada data)
     df_resampled = df_resampled.dropna()
 
     col1, col2 = st.columns(2)
@@ -43,21 +41,42 @@ else:
 
     st.divider()
 
-    # --- BAGIAN TENGAH: Tabel Aktif (Buzz/LED ON) ---
-    st.subheader("Histori Aktifitas (Buzzer / LED Menyala)")
-    # Filter data hanya saat buzzer atau LED bernilai 1
-    df_active = df[(df['isBuzzing'] == 1) | (df['LEDisON'] == 1)].copy()
+    # --- BAGIAN TENGAH: Histori Aktifitas Terpisah ---
+    st.subheader("Histori Aktifitas (Buzzer & LED)")
     
-    if not df_active.empty:
-        # Urutkan dari yang terbaru
-        df_active = df_active.sort_values(by='Datetime', ascending=False)
-        st.dataframe(
-            df_active[['Date', 'Time', 'jarak', 'Intensitas_cahaya', 'isBuzzing', 'LEDisON']], 
-            use_container_width=True, 
-            hide_index=True
-        )
-    else:
-        st.info("Belum ada histori Buzzer atau LED menyala.")
+    col_buzz, col_led = st.columns(2)
+    
+    with col_buzz:
+        st.markdown("**Histori Buzzer Menyala**")
+        # Filter hanya saat buzzer bernilai 1
+        df_buzzer = df[df['isBuzzing'] == 1].copy()
+        
+        if not df_buzzer.empty:
+            df_buzzer = df_buzzer.sort_values(by='Datetime', ascending=False)
+            # Menampilkan Date, Time, jarak, dan intensitas
+            st.dataframe(
+                df_buzzer[['Date', 'Time', 'jarak', 'Intensitas_cahaya']], 
+                use_container_width=True, 
+                hide_index=True
+            )
+        else:
+            st.info("Belum ada histori Buzzer menyala.")
+
+    with col_led:
+        st.markdown("**Histori LED Menyala**")
+        # Filter hanya saat LED bernilai 1
+        df_led = df[df['LEDisON'] == 1].copy()
+        
+        if not df_led.empty:
+            df_led = df_led.sort_values(by='Datetime', ascending=False)
+            # Menampilkan Date, Time, jarak, dan intensitas
+            st.dataframe(
+                df_led[['Date', 'Time', 'jarak', 'Intensitas_cahaya']], 
+                use_container_width=True, 
+                hide_index=True
+            )
+        else:
+            st.info("Belum ada histori LED menyala.")
 
     st.divider()
 
