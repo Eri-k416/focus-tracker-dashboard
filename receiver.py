@@ -1,12 +1,13 @@
-import serial
+import paho.mqtt.client as mqtt
 import csv
 import os
-import time
 from datetime import datetime
 
-# Sesuaikan port dengan COM port ESP32 di devicemu (misal 'COM3' untuk Windows, '/dev/ttyUSB0' untuk Linux)
-SERIAL_PORT = 'COM3' 
-BAUD_RATE = 115200
+# --- Konfigurasi MQTT HiveMQ ---
+# Gunakan broker publik HiveMQ atau sesuaikan dengan URL HiveMQ Cloud Anda
+MQTT_BROKER = "broker.hivemq.com"  
+MQTT_PORT = 1883                   # Port standar non-TLS (Gunakan 8883 jika pakai TLS/SSL Cloud)
+MQTT_TOPIC = "esp32/sensor/data"   # Sesuaikan dengan topic yang dipublish oleh ESP32 Anda
 CSV_FILE = 'data.csv'
 
 # Setup header CSV jika file belum ada
@@ -15,43 +16,67 @@ if not os.path.exists(CSV_FILE):
         writer = csv.writer(file)
         writer.writerow(['jarak', 'Intensitas_cahaya', 'isBuzzing', 'LEDisON', 'Date', 'Time'])
 
-try:
-    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-    print(f"Terkoneksi. Mendengarkan data di {SERIAL_PORT}...")
-except serial.SerialException as e:
-    print(f"Gagal membuka port serial: {e}")
-    exit()
+# Callback saat terhubung ke broker
+def on_connect(client, userdata, flags, rc, properties=None):
+    if rc == 0:
+        print(f"Berhasil terhubung ke MQTT Broker: {MQTT_BROKER}")
+        client.subscribe(MQTT_TOPIC)
+        print(f"Mendengarkan data pada topik: {MQTT_TOPIC}")
+    else:
+        print(f"Gagal koneksi ke broker, kode error: {rc}")
 
-while True:
+# Callback saat pesan MQTT diterima
+def on_message(client, userdata, msg):
     try:
-        if ser.in_waiting > 0:
-            # Baca line dari ESP32
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
-            data = line.split(',')
+        # Ambil payload pesan (format string koma: jarak,Intensitas_cahaya,isBuzzing,LEDisON)
+        payload = msg.payload.decode('utf-8').strip()
+        data = payload.split(',')
+        
+        # Pastikan data lengkap 4 parameter
+        if len(data) == 4:
+            now = datetime.now()
+            current_date = now.strftime('%d-%m-%Y')
+            current_time = now.strftime('%H:%M:%S')
             
-            # Pastikan data yang diterima lengkap 4 parameter
-            if len(data) == 4:
-                # Dapatkan Date dan Time saat ini
-                now = datetime.now()
-                current_date = now.strftime('%d-%m-%Y')
-                current_time = now.strftime('%H:%M:%S')
-                
-                # Susun row
-                row = [data[0], data[1], data[2], data[3], current_date, current_time]
-                
-                # Append ke CSV
-                with open(CSV_FILE, mode='a', newline='') as file:
-                    writer = csv.writer(file)
-                    writer.writerow(row)
-                
-                print(f"[{current_time}] Data tersimpan: {row}")
-            else:
-                print(f"Format tidak valid atau incomplete payload: {line}")
-                
-        time.sleep(0.1)
-
-    except KeyboardInterrupt:
-        print("\nReceiver dihentikan.")
-        break
+            # Susun baris data untuk CSV
+            row = [data[0], data[1], data[2], data[3], current_date, current_time]
+            
+            # Simpan ke CSV
+            with open(CSV_FILE, mode='a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(row)
+            
+            print(f"[{current_time}] Data MQTT tersimpan: {row}")
+        else:
+            print(f"Format payload tidak valid (harus 4 parameter): {payload}")
+            
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error memproses pesan: {e}")
+
+def main():
+    # Inisialisasi MQTT Client (Mendukung paho-mqtt v2 & v1)
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    except AttributeError:
+        client = mqtt.Client()
+
+    client.on_connect = on_connect
+    client.on_message = on_message
+
+    # --- KONFIGURASI TAMBAHAN JIKA MENGGUNAKAN HIVEMQ CLOUD (BERBAYAR/CLUSTER) ---
+    # Jika HiveMQ Cloud Anda memerlukan autentikasi username & password, uncomment baris di bawah:
+    # client.username_pw_set("USERNAME_ANDA", "PASSWORD_ANDA")
+    # client.tls_set()  # Wajib diaktifkan untuk HiveMQ Cloud (biasanya port 8883)
+
+    print(f"Menghubungkan ke {MQTT_BROKER}:{MQTT_PORT}...")
+    client.connect(MQTT_BROKER, MQTT_PORT, 60)
+
+    # Memulai loop background untuk menerima pesan secara terus-menerus
+    try:
+        client.loop_forever()
+    except KeyboardInterrupt:
+        print("\nReceiver MQTT dihentikan.")
+        client.disconnect()
+
+if __name__ == "__main__":
+    main()

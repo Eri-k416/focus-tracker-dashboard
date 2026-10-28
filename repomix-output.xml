@@ -1,0 +1,227 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+dashboard.py
+data.csv
+gitignore
+receiver.py
+script.txt
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="data.csv">
+jarak,Intensitas_cahaya,isBuzzing,LEDisON,Date,Time
+25.4,320,0,0,25-10-2026,16:30:00
+20.1,335,0,0,25-10-2026,16:31:00
+15.5,340,0,0,25-10-2026,16:32:00
+9.2,310,1,1,25-10-2026,16:33:00
+5.0,290,1,1,25-10-2026,16:34:00
+12.3,400,0,1,25-10-2026,16:35:00
+22.0,450,0,0,25-10-2026,16:36:00
+30.5,500,0,0,25-10-2026,16:37:00
+45.0,520,0,0,25-10-2026,16:38:00
+8.5,200,1,1,25-10-2026,16:39:00
+10.0,210,1,1,25-10-2026,16:40:00
+</file>
+
+<file path="gitignore">
+/venv
+</file>
+
+<file path="receiver.py">
+import serial
+import csv
+import os
+import time
+from datetime import datetime
+
+# Sesuaikan port dengan COM port ESP32 di devicemu (misal 'COM3' untuk Windows, '/dev/ttyUSB0' untuk Linux)
+SERIAL_PORT = 'COM3'
+BAUD_RATE = 115200
+CSV_FILE = 'data.csv'
+
+# Setup header CSV jika file belum ada
+if not os.path.exists(CSV_FILE):
+    with open(CSV_FILE, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['jarak', 'Intensitas_cahaya', 'isBuzzing', 'LEDisON', 'Date', 'Time'])
+
+try:
+    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+    print(f"Terkoneksi. Mendengarkan data di {SERIAL_PORT}...")
+
+except serial.SerialException as e:
+    print(f"Gagal membuka port serial: {e}")
+    exit()
+
+while True:
+    try:
+        if ser.in_waiting > 0:
+            # Baca line dari ESP32
+            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            data = line.split(',')
+            
+            # Pastikan data yang diterima lengkap 4 parameter
+            if len(data) == 4:
+                # Dapatkan Date dan Time saat ini
+                now = datetime.now()
+                current_date = now.strftime('%d-%m-%Y')
+                current_time = now.strftime('%H:%M:%S')
+                
+                # Susun row
+                row = [data[0], data[1], data[2], data[3], current_date, current_time]
+                
+                # Append ke CSV
+                with open(CSV_FILE, mode='a', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(row)
+                
+                print(f"[{current_time}] Data tersimpan: {row}")
+            else:
+                print(f"Format tidak valid atau incomplete payload: {line}")
+                
+        time.sleep(0.1)
+
+    except KeyboardInterrupt:
+        print("\nReceiver dihentikan.")
+        break
+    except Exception as e:
+        print(f"Error: {e}")
+</file>
+
+<file path="script.txt">
+python receiver.py
+streamlit run dashboard.py
+</file>
+
+<file path="dashboard.py">
+import streamlit as st
+import pandas as pd
+
+st.set_page_config(page_title="ESP32 Dashboard", layout="wide")
+st.title("ESP32 Sensor Dashboard")
+
+# Load data dengan cache dan TTL agar otomatis terupdate
+@st.cache_data(ttl=2) 
+def load_data():
+    try:
+        df = pd.read_csv("data.csv")
+        # Buat kolom Datetime untuk mempermudah resampling grafik
+        df['Datetime'] = pd.to_datetime(df['Date'] + ' ' + df['Time'], format='%d-%m-%Y %H:%M:%S')
+        return df
+    except FileNotFoundError:
+        return pd.DataFrame(columns=['jarak', 'Intensitas_cahaya', 'isBuzzing', 'LEDisON', 'Date', 'Time', 'Datetime'])
+
+df = load_data()
+
+if df.empty:
+    st.warning("Menunggu data... (File data.csv belum ada atau kosong)")
+else:
+    # --- BAGIAN ATAS: Grafik Statistik ---
+    st.subheader("Grafik Statistik Rata-rata")
+    
+    interval_dict = {'Per Menit': 'min', 'Per Jam': 'h', 'Per Hari': 'D'}
+    pilihan = st.selectbox("Pilih Interval Waktu:", list(interval_dict.keys()))
+    freq = interval_dict[pilihan]
+
+    df_resampled = df.set_index('Datetime').resample(freq)[['jarak', 'Intensitas_cahaya']].mean().reset_index()
+    df_resampled = df_resampled.dropna()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Rata-rata Jarak**")
+        st.line_chart(df_resampled.set_index('Datetime')['jarak'])
+    
+    with col2:
+        st.markdown("**Rata-rata Intensitas Cahaya**")
+        st.line_chart(df_resampled.set_index('Datetime')['Intensitas_cahaya'])
+
+    st.divider()
+
+    # --- BAGIAN TENGAH: Histori Aktifitas Terpisah ---
+    st.subheader("Histori Aktifitas (Buzzer & LED)")
+    
+    col_buzz, col_led = st.columns(2)
+    
+    with col_buzz:
+        st.markdown("**Histori Buzzer Menyala**")
+        # Filter hanya saat buzzer bernilai 1
+        df_buzzer = df[df['isBuzzing'] == 1].copy()
+        
+        if not df_buzzer.empty:
+            df_buzzer = df_buzzer.sort_values(by='Datetime', ascending=False)
+            # Menampilkan Date, Time, jarak, dan intensitas
+            st.dataframe(
+                df_buzzer[['Date', 'Time', 'jarak', 'Intensitas_cahaya']], 
+                use_container_width=True, 
+                hide_index=True
+            )
+        else:
+            st.info("Belum ada histori Buzzer menyala.")
+
+    with col_led:
+        st.markdown("**Histori LED Menyala**")
+        # Filter hanya saat LED bernilai 1
+        df_led = df[df['LEDisON'] == 1].copy()
+        
+        if not df_led.empty:
+            df_led = df_led.sort_values(by='Datetime', ascending=False)
+            # Menampilkan Date, Time, jarak, dan intensitas
+            st.dataframe(
+                df_led[['Date', 'Time', 'jarak', 'Intensitas_cahaya']], 
+                use_container_width=True, 
+                hide_index=True
+            )
+        else:
+            st.info("Belum ada histori LED menyala.")
+
+    st.divider()
+
+    # --- BAGIAN BAWAH: Histori Keseluruhan ---
+    st.subheader("Tabel Histori Keseluruhan")
+    df_history = df.sort_values(by='Datetime', ascending=False).drop(columns=['Datetime'])
+    st.dataframe(df_history, use_container_width=True, hide_index=True)
+</file>
+
+</files>
