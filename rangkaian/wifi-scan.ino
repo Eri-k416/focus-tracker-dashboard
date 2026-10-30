@@ -7,6 +7,10 @@ const int analogPRS = 34;
 int penaltyTime = 0;
 int maxPenaltyTime = 10;
 
+// Tambahan variabel waktu pengganti delay
+unsigned long lastLoopTime = 0;
+unsigned long lastBuzzerTime = 0;
+bool statusBuzzer = false;
 
 void setup() {
   Serial.begin(115200);
@@ -17,10 +21,17 @@ void setup() {
 }
 
 void peringatan(int pin) {
-  tone(buzled, 1000); // Tone otomatis menyalakan LED tanpa digitalWrite
-  delay(1000);
-  noTone(buzled);
-  delay(1000);
+  // Pengganti delay(1000) agar nyala-mati tiap 1 detik tanpa memblokir program
+  if (millis() - lastBuzzerTime >= 1000) {
+    lastBuzzerTime = millis();
+    statusBuzzer = !statusBuzzer;
+
+    if (statusBuzzer) {
+      tone(pin, 1000);
+    } else {
+      noTone(pin);
+    }
+  }
 }
 
 void trigUltraSonik(int pin) {
@@ -38,8 +49,7 @@ int echoUltraSonik(int pin) {
   return distance;
 }
 
-int deteksiCahaya(){
-
+int deteksiCahaya() {
   int rawValue = analogRead(analogPRS);
   int persentaseCahaya = map(rawValue, 32, 4063, 100, 0);
 
@@ -53,45 +63,44 @@ void nyalaLampu(int nilaiCahaya) {
 }
 
 void loop() {
+  // Pengganti delay(500) menggunakan millis()
+  if (millis() - lastLoopTime >= 500) {
+    lastLoopTime = millis();
 
+    int nilaiCahaya = deteksiCahaya();
 
-
-  int nilaiCahaya = deteksiCahaya();
-
-  if (nilaiCahaya < 50 )  {
-    Serial.print("Nilai : ");
-    Serial.print(nilaiCahaya);
-    Serial.println(" Kondisi  Gelap");
-
-  }
-  else {
-    Serial.print("Nilai : ");
-    Serial.print(nilaiCahaya);
-    Serial.println(" Kondisi Terang");
-  }
-
-  int terangLampu;
-  if (nilaiCahaya < 50) {
-    terangLampu = (100-nilaiCahaya)*2;
-  } else {
-    terangLampu = 0;
-  }
-
-  nyalaLampu(terangLampu);
-
-  trigUltraSonik(trigULS);
-  int jarak = echoUltraSonik(echoULS);
-
-  if (jarak > 70){
-    if (penaltyTime > 10) {
-      peringatan(buzled);
+    if (nilaiCahaya < 50) {
+      Serial.print("Nilai : ");
+      Serial.print(nilaiCahaya);
+      Serial.println(" Kondisi  Gelap");
     } else {
-      penaltyTime++;
+      Serial.print("Nilai : ");
+      Serial.print(nilaiCahaya);
+      Serial.println(" Kondisi Terang");
     }
-  } else {
-    penaltyTime = 0;
+
+    int terangLampu;
+    if (nilaiCahaya < 50) {
+      terangLampu = (100 - nilaiCahaya) * 2;
+    } else {
+      terangLampu = 0;
+    }
+
+    nyalaLampu(terangLampu);
+
+    trigUltraSonik(trigULS);
+    int jarak = echoUltraSonik(echoULS);
+
+    if (jarak > 70) {
+      if (penaltyTime > maxPenaltyTime) {
+        peringatan(buzled);
+      } else {
+        penaltyTime++;
+      }
+    } else {
+      penaltyTime = 0;
+      noTone(buzled); // Memastikan buzzer berhenti saat jarak kembali aman
+      statusBuzzer = false;
+    }
   }
-
-  delay(500);
-
 }
